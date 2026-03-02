@@ -2,7 +2,7 @@
 
 A minimal, read-only, fully measured VM image for [Intel TDX](https://www.intel.com/content/www/us/en/developer/tools/trust-domain-extensions/overview.html) confidential computing. Built with [mkosi](https://github.com/systemd/mkosi).
 
-The image is cloud-agnostic at its core — a standard GPT disk with a UKI, erofs root, and dm-verity hash tree. It can run on any TDX-capable hypervisor (GCP, Azure, bare-metal QEMU/KVM). This repository includes a deployment guide for **Google Cloud Platform**; guides for other platforms will follow.
+The image is cloud-agnostic at its core — a standard GPT disk with a UKI, erofs root, and dm-verity hash tree. It can run on any TDX-capable hypervisor (GCP, Azure, bare-metal QEMU/KVM). See [Deployment guides](#deployment-guides) for platform-specific instructions.
 
 This is the base OS image. Application-specific layers (services, binaries) are built on top of it in separate repositories.
 
@@ -114,151 +114,52 @@ tpm2_pcrread sha256:0,1,2,3,4,5,7,11
 
 Exit QEMU: `Ctrl-A X`
 
-## Deploying to Google Cloud Platform
+## Deployment guides
 
-### Package and upload
+| Platform | Guide | TDX host managed by |
+|----------|-------|---------------------|
+| Google Cloud Platform | [docs/deploy-gcp.md](docs/deploy-gcp.md) | Google |
+| OVHcloud bare metal (Scale-i1) | [docs/deploy-ovhcloud.md](docs/deploy-ovhcloud.md) | Operator (via [canonical/tdx](https://github.com/canonical/tdx)) |
 
-```bash
-# GCP expects disk.raw inside a tar.gz
-cp privasys-tdx-base_0.1.0.raw disk.raw
-tar -czf privasys-tdx-base-0.1.0.tar.gz disk.raw
-rm disk.raw
+## Where this fits in the TDX stack
 
-# Upload to your GCS bucket
-gcloud storage cp privasys-tdx-base-0.1.0.tar.gz gs://YOUR_BUCKET/
+This image is the **guest OS** layer. It sits on top of the host stack and below your application:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  intel/tdx-module                         Silicon firmware  │
+│  TDX SEAM module running inside the CPU                     │
+│  Creates & isolates Trust Domains, manages memory keys      │
+│  Ships in CPU microcode — not user-serviceable              │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ creates / measures
+┌──────────────────────────▼──────────────────────────────────┐
+│  canonical/tdx                          Host OS / hypervisor│
+│  Modified kernel, QEMU, OVMF/TDVF, libvirt patches          │
+│  Enables the host to launch TDX guests                      │
+│  Only needed on bare metal (cloud providers handle this)    │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ launches
+┌──────────────────────────▼──────────────────────────────────┐
+│  tdx-image-base (this repo)                 Guest OS image  │
+│  UKI boot, erofs root, dm-verity, attestation tools         │
+│  The workload runs here                                     │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ services go here
+┌──────────────────────────▼──────────────────────────────────┐
+│  Application layer                                          │
+│  Reverse proxies, databases, application binaries           │
+│  Built as a separate image on top of this base              │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Create a GCP image
-
-```bash
-gcloud compute images create privasys-tdx-base-0-1-0 \
-    --source-uri=gs://YOUR_BUCKET/privasys-tdx-base-0.1.0.tar.gz \
-    --guest-os-features=TDX_CAPABLE,UEFI_COMPATIBLE,GVNIC,VIRTIO_SCSI_MULTIQUEUE \
-    --family=privasys-tdx \
-    --description="Privasys TDX base image v0.1.0 - Ubuntu 24.04, erofs root, dm-verity, unsigned UKI"
-```
-
-### Launch a TDX VM
-
-```bash
-gcloud compute instances create my-tdx-vm \
-    --zone=europe-west9-a \
-    --machine-type=c3-standard-4 \
-    --network-interface=nic-type=GVNIC \
-    --maintenance-policy=TERMINATE \
-    --create-disk=auto-delete=yes,boot=yes,image=projects/YOUR_PROJECT/global/images/family/privasys-tdx,size=10,type=pd-balanced \
-    --shielded-secure-boot \
-    --shielded-vtpm \
-    --shielded-integrity-monitoring \
-    --confidential-compute-type=TDX
-```
-
-### Verify
-
-```bash
-gcloud compute ssh my-tdx-vm
-
-ls -l /dev/tdx_guest          # TDX device present
-mount | grep verity            # dm-verity on root
-touch /test 2>&1               # Read-only file system
-tpm2_pcrread sha256:0,1,2,3,4,5,7,11
-```
-
-## Deploying to OVHcloud bare metal (Scale-i1 / Xeon Gold 6426Y)
-
-OVHcloud Scale-i1 servers ship Intel Xeon Gold 6426Y (Sapphire Rapids), which has hardware TDX support. On bare metal you control both the **host** and the **guest**, so you need to set up the TDX host stack before launching VMs with this image.
-
-### 1. Prepare the host
-
-Install Ubuntu 24.04 on the bare-metal server, then set up the TDX host stack using [canonical/tdx](https://github.com/canonical/tdx):
-
-```bash
-# On the OVHcloud bare-metal host
-git clone https://github.com/canonical/tdx.git
-cd tdx
-sudo ./setup-host.sh
-
-# Reboot into the TDX-enabled kernel
-sudo reboot
-```
-
-After reboot, verify TDX is active:
-
-```bash
-dmesg | grep -i tdx
-# Expected: "TDX module initialized"
-
-ls /dev/tdx_host
-# Should exist
-```
-
-### 2. Install guest tooling
-
-```bash
-sudo apt install -y qemu-system-x86 libvirt-daemon-system virtinst swtpm
-```
-
-### 3. Launch the image as a TDX VM
-
-Using QEMU directly:
-
-```bash
-# Copy the raw image to the host
-cp privasys-tdx-base_0.1.0.raw /var/lib/libvirt/images/
-
-qemu-system-x86_64 \
-    -accel kvm \
-    -cpu host \
-    -machine q35,kernel-irqchip=split,confidential-guest-support=tdx0,memory-backend=ram1 \
-    -object tdx-guest,id=tdx0 \
-    -object memory-backend-memfd,id=ram1,size=4G,share=true \
-    -m 4G \
-    -smp 4 \
-    -bios /usr/share/OVMF/OVMF_CODE_4M.fd \
-    -drive file=/var/lib/libvirt/images/privasys-tdx-base_0.1.0.raw,format=raw,if=virtio \
-    -chardev socket,id=chrtpm,path=/tmp/vtpm/swtpm.sock \
-    -tpmdev emulator,id=tpm0,chardev=chrtpm \
-    -device tpm-crb,tpmdev=tpm0 \
-    -netdev bridge,id=net0,br=virbr0 \
-    -device virtio-net-pci,netdev=net0 \
-    -nographic
-```
-
-Or using libvirt (recommended for production):
-
-```bash
-virt-install \
-    --name privasys-tdx \
-    --ram 4096 --vcpus 4 \
-    --cpu host \
-    --machine q35 \
-    --boot uefi \
-    --disk /var/lib/libvirt/images/privasys-tdx-base_0.1.0.raw,format=raw \
-    --network bridge=virbr0 \
-    --tpm model=tpm-crb,type=emulator,version=2.0 \
-    --launchSecurity type=tdx \
-    --import --noautoconsole
-
-virsh console privasys-tdx
-```
-
-### 4. Verify inside the VM
-
-```bash
-ls -l /dev/tdx_guest          # TDX device present
-dmesg | grep -i tdx           # TDX guest messages
-mount | grep verity            # dm-verity on root
-touch /test 2>&1               # Read-only file system
-tpm2_pcrread sha256:0,1,2,3,4,5,7,11
-```
-
-### Notes on bare-metal TDX
-
-- **BIOS settings:** Ensure TDX, TME-MK (Total Memory Encryption Multi-Key), and SGX are enabled in the UEFI/BIOS. OVHcloud may require a support ticket to enable these on Scale-i1.
-- **Kernel version:** The host needs kernel 6.7+ for TDX host support. The canonical/tdx setup script handles this.
-- **Multiple VMs:** You can run many TDX VMs on a single host. Each gets its own isolated Trust Domain with independent measurements.
-- **Attestation:** On bare metal, attestation goes through the Intel PCS (Provisioning Certification Service) or your own PCCS. This differs from GCP, which wraps attestation in its Confidential Computing API.
-- **Networking:** The example uses libvirt's default bridge (`virbr0`). For production, configure a dedicated bridge on the OVHcloud public/private network interface.
+| | [intel/tdx-module](https://github.com/intel/tdx-module) | [canonical/tdx](https://github.com/canonical/tdx) | tdx-image-base |
+|---|---|---|---|
+| **What** | CPU firmware (SEAM module) | Host-side Linux + QEMU patches | Guest VM disk image |
+| **Runs where** | Inside the CPU | On the bare-metal host OS | Inside the Trust Domain |
+| **On managed cloud** | Managed by provider | Managed by provider | **This repo** |
+| **On bare metal** | In the CPU | **Operator installs** | **This repo** |
+| **Licence** | Intel proprietary | GPL-2.0 (Ubuntu/kernel) | AGPL-3.0 |
 
 ## Repository structure
 
@@ -287,6 +188,9 @@ mkosi.extra/                # Files overlaid onto the image
       50-hardened.conf      # Hardened SSH config
     tmpfiles.d/
       readwrite.conf        # Writable directories on read-only rootfs
+docs/
+  deploy-gcp.md             # Google Cloud Platform deployment guide
+  deploy-ovhcloud.md        # OVHcloud bare-metal deployment guide
 ```
 
 ## How updates work
