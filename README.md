@@ -2,7 +2,7 @@
 
 A minimal, read-only, fully measured VM image for [Intel TDX](https://www.intel.com/content/www/us/en/developer/tools/trust-domain-extensions/overview.html) confidential computing. Built with [mkosi](https://github.com/systemd/mkosi).
 
-The image is cloud-agnostic at its core — a standard GPT disk with a UKI, erofs root, and dm-verity hash tree. It can run on any TDX-capable hypervisor (GCP, Azure, bare-metal QEMU/KVM). See [Deployment guides](#deployment-guides) for platform-specific instructions.
+The image is cloud-agnostic at its core — a standard GPT disk with a GRUB-booted kernel, erofs root, and dm-verity hash tree. It can run on any TDX-capable hypervisor (GCP, Azure, bare-metal QEMU/KVM). See [Deployment guides](#deployment-guides) for platform-specific instructions.
 
 This is the base OS image. Application-specific layers (services, binaries) are built on top of it in separate repositories.
 
@@ -12,7 +12,7 @@ This is the base OS image. Application-specific layers (services, binaries) are 
 Silicon (TDX hardware)
   └─ MRTD — measures the TD firmware (OVMF/TDVF) loaded by the hypervisor
       └─ RTMR[0] — measures the firmware configuration
-          └─ RTMR[1] — measures the UKI (kernel + initrd + cmdline with dm-verity root hash)
+          └─ RTMR[1] — measures the bootloader, kernel, initrd, and cmdline (with dm-verity root hash)
               └─ dm-verity — every block of the rootfs verified against the hash tree
                   └─ All userland binaries — any modification = I/O error + kernel panic
 ```
@@ -24,10 +24,10 @@ Every byte of code that executes on the machine is either measured by TDX hardwa
 | Component | Details |
 |-----------|---------|
 | Guest OS | Ubuntu 24.04 LTS (Noble Numbat) |
-| Kernel | `linux-image-generic` (6.8+) |
+| Kernel | `linux-image-gcp` (6.17+, auto-tracks latest; has TDX + SEV guest support, gVNIC, NVMe) |
 | Root filesystem | erofs (read-only) |
 | Integrity | dm-verity hash tree |
-| Boot | Unsigned [Unified Kernel Image](https://uapi-group.org/specifications/specs/unified_kernel_image/) via systemd-boot |
+| Boot | GRUB with kernel + initrd + dm-verity roothash in cmdline |
 | Partitions | ESP (512 MB) + root erofs (~940 MB) + verity hash (~63 MB) |
 | Networking | systemd-networkd with DHCP |
 | SSH | openssh-server (password auth disabled) |
@@ -52,13 +52,10 @@ sudo pip3 install mkosi==26 --break-system-packages
 
 # Build tools
 sudo apt install -y \
-    systemd-ukify systemd-boot-efi systemd-repart \
+    systemd-repart grub-efi-amd64-bin \
     mtools dosfstools e2fsprogs squashfs-tools \
     veritysetup cryptsetup erofs-utils \
-    pesign sbsigntools debootstrap
-
-# systemd-boot provides bootctl, needed by mkosi for ESP population
-sudo apt install -y systemd-boot
+    debootstrap
 ```
 
 ### Build
@@ -76,9 +73,9 @@ Verify the partition layout:
 ```bash
 sudo fdisk -l privasys-tdx-base_0.1.0.raw
 # Expected:
-#   1. EFI System Partition (~512 MB, FAT32, contains the UKI)
-#   2. Root partition (erofs, dm-verity data, ~940 MB)
-#   3. Root verity partition (dm-verity hash tree, ~63 MB)
+#   1. EFI System Partition (~512 MB, FAT32, GRUB + kernel + initrd)
+#   2. Root partition (erofs, dm-verity data)
+#   3. Root verity partition (dm-verity hash tree)
 ```
 
 ### Test locally with QEMU
@@ -142,7 +139,7 @@ This image is the **guest OS** layer. It sits on top of the host stack and below
                            │ launches
 ┌──────────────────────────▼──────────────────────────────────┐
 │  tdx-image-base (this repo)                 Guest OS image  │
-│  UKI boot, erofs root, dm-verity, attestation tools         │
+│  GRUB boot, erofs root, dm-verity, attestation tools        │
 │  The workload runs here                                     │
 └──────────────────────────┬──────────────────────────────────┘
                            │ services go here
@@ -166,7 +163,7 @@ This image is the **guest OS** layer. It sits on top of the host stack and below
 ```
 mkosi.conf                  # Main build configuration
 mkosi.conf.d/
-  uki.conf                  # Unified Kernel Image settings
+  boot.conf                 # Bootloader and kernel command line settings
 mkosi.repart/
   00-esp.conf               # EFI System Partition
   10-root.conf              # Root filesystem (erofs + dm-verity)
@@ -219,7 +216,7 @@ All added binaries remain **fully measured by dm-verity** — the trust chain is
 ## Design notes
 
 - **Why erofs?** Read-only by design, smaller than ext4, ideal for dm-verity. No accidental writes possible.
-- **Why unsigned UKI?** TDX measures the UKI into RTMR[1] regardless of Secure Boot signature status. On platforms using TDVF (e.g. GCP), signing adds complexity without security benefit. For platforms that enforce Secure Boot, set `UnifiedKernelImages=signed` and provide signing keys.
+- **Why GRUB instead of UKI?** GCP's TDX firmware (TDVF) enforces Secure Boot, which silently rejects unsigned EFI binaries including systemd-boot and unsigned UKIs. GRUB is the proven boot chain for TDX on GCP and other cloud platforms. TDX still measures the full boot chain (kernel, initrd, cmdline) into RTMR registers regardless of the bootloader used.
 - **Why mkosi.extra symlinks instead of mkosi.postinst?** With erofs, the filesystem is already read-only when postinst runs. `systemctl enable` writes symlinks to `/etc`, which fails on a read-only filesystem.
 - **Why `Repositories=universe`?** Required for packages like `clevis` that aren't in Ubuntu's `main` repository.
 - **Why `CopyFiles=/:/` in the root partition config?** erofs requires explicit file population — without this directive, the root partition is empty.
