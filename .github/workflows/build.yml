@@ -1,0 +1,78 @@
+name: Build TDX Image
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build image
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install mkosi
+        run: |
+          sudo pip3 install git+https://github.com/systemd/mkosi.git --break-system-packages
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            systemd-ukify systemd-boot-efi systemd-repart \
+            mtools dosfstools e2fsprogs squashfs-tools \
+            veritysetup cryptsetup erofs-utils \
+            pesign sbsigntools debootstrap systemd-boot
+
+      - name: Recreate symlinks
+        run: |
+          # Git on the CI runner may check out symlink files as plain text.
+          # Recreate them as real symlinks so mkosi overlays work correctly.
+          cd mkosi.extra/etc/systemd/system
+
+          for f in multi-user.target.wants/systemd-networkd.service \
+                   sockets.target.wants/systemd-networkd.socket \
+                   sysinit.target.wants/systemd-networkd-wait-online.service; do
+            if [ -f "$f" ] && [ ! -L "$f" ]; then
+              target=$(cat "$f")
+              rm "$f"
+              ln -s "$target" "$f"
+            fi
+          done
+
+          cd ../../../..
+          if [ -f etc/resolv.conf ] && [ ! -L etc/resolv.conf ]; then
+            target=$(cat etc/resolv.conf)
+            rm etc/resolv.conf
+            ln -s "$target" etc/resolv.conf
+          fi
+
+      - name: Build image
+        run: sudo mkosi build
+
+      - name: Verify partitions
+        run: |
+          sudo fdisk -l privasys-tdx-base_*.raw
+          echo "---"
+          ls -lh privasys-tdx-base_*.raw
+
+      - name: Package for GCP
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cp privasys-tdx-base_*.raw disk.raw
+          tar -czf privasys-tdx-base-${{ github.ref_name }}.tar.gz disk.raw
+          rm disk.raw
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: privasys-tdx-base-*.tar.gz
+          generate_release_notes: true

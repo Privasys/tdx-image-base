@@ -1,0 +1,10 @@
+# mkosi build output
+*.raw
+*.tar.gz
+disk.raw
+
+# mkosi cache and workspace
+mkosi.cache/
+mkosi.builddir/
+mkosi.output/
+mkosi.workspace/

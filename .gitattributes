@@ -1,0 +1,5 @@
+# Ensure symlinks are stored as symlinks in git
+mkosi.extra/etc/resolv.conf symlink=true
+mkosi.extra/etc/systemd/system/multi-user.target.wants/* symlink=true
+mkosi.extra/etc/systemd/system/sockets.target.wants/* symlink=true
+mkosi.extra/etc/systemd/system/sysinit.target.wants/* symlink=true
