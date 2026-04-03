@@ -71,7 +71,7 @@ Use tdx-image-base when:
 | Component | Details |
 |-----------|---------|
 | Guest OS | Ubuntu 24.04 LTS (Noble Numbat) |
-| Kernel | `linux-image-gcp` (6.17+, auto-tracks latest; first Noble kernel with TDX guest support) |
+| Kernel | `linux-image-generic-hwe-24.04` (6.19, HWE; auto-tracks latest; TDX + SEV guest support since 6.7) |
 | Root filesystem | erofs (read-only) |
 | Integrity | dm-verity hash tree |
 | Boot | Signed shim (Microsoft) → signed GRUB (Canonical) → kernel + initrd + dm-verity roothash in cmdline |
@@ -265,6 +265,7 @@ All added binaries remain **fully measured by dm-verity** — the trust chain is
 
 - **Why erofs?** Read-only by design, smaller than ext4, ideal for dm-verity. No accidental writes possible.
 - **Why GRUB instead of UKI?** GCP's TDX firmware (TDVF) enforces Secure Boot, which silently rejects unsigned EFI binaries including systemd-boot and unsigned UKIs. GRUB is the proven boot chain for TDX on GCP and other cloud platforms. TDX still measures the full boot chain (kernel, initrd, cmdline) into RTMR registers regardless of the bootloader used.
+- **Why `linux-image-generic-hwe-24.04`?** The HWE (Hardware Enablement) kernel tracks the latest LTS-backported kernel on Noble, currently 6.19. TDX and SEV guest support has been upstream since 6.7, so this works on any cloud or bare-metal platform.
 - **Why mkosi.extra symlinks instead of mkosi.postinst?** With erofs, the filesystem is already read-only when postinst runs. `systemctl enable` writes symlinks to `/etc`, which fails on a read-only filesystem.
 - **Why `Repositories=universe`?** Required for packages like `clevis` that aren't in Ubuntu's `main` repository.
 - **Why `CopyFiles=/:/` in the root partition config?** erofs requires explicit file population — without this directive, the root partition is empty.
