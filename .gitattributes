@@ -8,3 +8,6 @@ common/mkosi.extra/etc/systemd/system/sysinit.target.wants/* symlink=true
 
 # SEV-SNP GPU image symlinks
 images/sev-snp-gpu/mkosi.extra/etc/systemd/system/multi-user.target.wants/* symlink=true
+
+# TDX GPU image symlinks
+images/tdx-gpu/mkosi.extra/etc/systemd/system/multi-user.target.wants/* symlink=true
