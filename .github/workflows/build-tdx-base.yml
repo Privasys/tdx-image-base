@@ -3,9 +3,6 @@ name: Build TDX Base Image
 on:
   push:
     branches: [main]
-    paths:
-      - 'images/tdx-base/**'
-      - 'common/**'
     tags: ['tdx-base-v*']
   pull_request:
     branches: [main]

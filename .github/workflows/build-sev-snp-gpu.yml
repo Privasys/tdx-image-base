@@ -3,9 +3,6 @@ name: Build SEV-SNP GPU Image
 on:
   push:
     branches: [main]
-    paths:
-      - 'images/sev-snp-gpu/**'
-      - 'common/**'
     tags: ['sev-snp-gpu-v*']
   pull_request:
     branches: [main]

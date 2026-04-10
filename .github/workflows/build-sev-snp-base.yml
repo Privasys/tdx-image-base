@@ -3,9 +3,6 @@ name: Build SEV-SNP Base Image
 on:
   push:
     branches: [main]
-    paths:
-      - 'images/sev-snp-base/**'
-      - 'common/**'
     tags: ['sev-snp-base-v*']
   pull_request:
     branches: [main]
