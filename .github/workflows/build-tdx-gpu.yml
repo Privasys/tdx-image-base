@@ -91,9 +91,11 @@ jobs:
       - name: Package for cloud
         if: startsWith(github.ref, 'refs/tags/tdx-gpu-v')
         run: |
-          cp images/tdx-gpu/privasys-tdx-gpu_*.raw disk.raw
-          tar -czf privasys-tdx-gpu-${{ github.ref_name }}.tar.gz disk.raw
-          rm disk.raw
+          RAW=$(basename images/tdx-gpu/privasys-tdx-gpu_*.raw)
+          tar -czf privasys-tdx-gpu-${{ github.ref_name }}.tar.gz \
+            --transform "s|$RAW|disk.raw|" \
+            -C images/tdx-gpu "$RAW"
+          rm images/tdx-gpu/"$RAW"
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/tdx-gpu-v')
