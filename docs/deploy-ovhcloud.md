@@ -101,4 +101,3 @@ tpm2_pcrread sha256:0,1,2,3,4,5,7,11
 - **Multiple VMs:** You can run many TDX VMs on a single host. Each gets its own isolated Trust Domain with independent measurements.
 - **Attestation:** On bare metal, attestation goes through the [Intel PCS](https://api.portal.trustedservices.intel.com/) (Provisioning Certification Service) or your own PCCS. This differs from GCP, which wraps attestation in its Confidential Computing API.
 - **Networking:** The examples use libvirt's default bridge (`virbr0`). For production, configure a dedicated bridge on the OVHcloud public/private network interface.
-- **GCP guest agent:** The image ships `google-guest-agent` for GCP compatibility. On bare metal this service will fail to reach the GCP metadata server and remain inactive — it does not affect functionality.

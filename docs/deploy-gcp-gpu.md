@@ -11,10 +11,10 @@ Deploy a TDX Confidential VM with NVIDIA H100 GPU on GCP. Uses an `a3-highgpu-1g
 
 ## Import the image
 
-Build the image (see [Building from source](../README.md#building-from-source)):
+Build the image with the GCP profile (see [Building from source](../README.md#building-from-source)):
 
 ```bash
-cd images/tdx-gpu && sudo mkosi build
+cd images/tdx-gpu && sudo mkosi --profile gcp build
 ```
 
 Package and import to GCP:

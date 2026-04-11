@@ -1,0 +1,35 @@
+From: Privasys <engineering@privasys.org>
+Subject: [PATCH 2/3] nvidia: Limit SG segment size for swiotlb compatibility
+
+In a TDX Confidential VM, all DMA goes through swiotlb bounce buffers
+because device memory is untrusted.  The kernel's swiotlb has a
+compile-time segment limit of 256 KB (IO_TLB_SEGSIZE=128 * 4K pages).
+
+The upstream driver uses sg_alloc_table_from_pages() which allows the
+kernel to merge contiguous pages into large scatter-gather segments
+that can exceed the swiotlb limit, causing DMA mapping failures.
+
+Fix: use sg_alloc_table_from_pages_segment() with max_segment=PAGE_SIZE
+to force single-page (4 KB) SG segments.  This is the same approach
+NVIDIA already uses for Xen Dom0 (behind NV_DOM0_KERNEL_PRESENT) for
+the same reason - xen_swiotlb also cannot handle large segments.
+
+---
+ kernel-open/common/inc/nv-linux.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/kernel-open/common/inc/nv-linux.h
++++ b/kernel-open/common/inc/nv-linux.h
+@@ -1119,10 +1119,10 @@ typedef struct nv_dma_map_s {
+  */
+ #if !defined(NV_DOM0_KERNEL_PRESENT)
+     #define NV_ALLOC_DMA_SUBMAP_SCATTERLIST(dm, sm, i)                        \
+-        ((sg_alloc_table_from_pages(&sm->sgt,                                 \
++        ((sg_alloc_table_from_pages_segment(&sm->sgt,                      \
+             &dm->pages[NV_DMA_SUBMAP_IDX_TO_PAGE_IDX(i)],                     \
+             sm->page_count, 0,                                                \
+-            sm->page_count * PAGE_SIZE, NV_GFP_KERNEL) == 0) ? NV_OK :        \
++            sm->page_count * PAGE_SIZE, PAGE_SIZE, NV_GFP_KERNEL) == 0) ? NV_OK :        \
+                 NV_ERR_OPERATING_SYSTEM)
+ #else
+     #define NV_ALLOC_DMA_SUBMAP_SCATTERLIST(dm, sm, i)                \

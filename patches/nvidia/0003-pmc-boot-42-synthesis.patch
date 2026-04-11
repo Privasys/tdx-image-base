@@ -1,0 +1,90 @@
+From: Privasys <engineering@privasys.org>
+Subject: [PATCH 3/3] nvidia: Synthesize PMC_BOOT_42 from PMC_BOOT_0 for TDX
+
+On GCP Confidential VMs with GPU passthrough, reading the GPU's BAR0
+register PMC_BOOT_42 returns 0x00000000.  This register is used by the
+Resource Manager firmware (GSP-RM) to identify the GPU architecture.
+When it reads zero, the RM cannot determine it is running on GH100
+(H100) and fails to initialise.
+
+PMC_BOOT_0 still returns a valid value (0x180000a1 for H100).  The
+architecture and implementation fields can be extracted from BOOT_0
+and packed into the BOOT_42 format.
+
+Fix: in all three code paths that read PMC_BOOT_42 (gpu_mgr.c for
+the GPU manager, osapi.c for rm_is_supported_device, and osinit.c
+for RmInitPrivateState), check if BOOT_42 is zero and construct a
+synthetic value from BOOT_0.
+
+---
+ src/nvidia/src/kernel/gpu_mgr/gpu_mgr.c       |  9 +++++++++
+ src/nvidia/arch/nvalloc/unix/src/osapi.c       | 15 +++++++++++++++
+ src/nvidia/arch/nvalloc/unix/src/osinit.c      | 15 +++++++++++++++
+ 3 files changed, 39 insertions(+)
+
+--- a/src/nvidia/src/kernel/gpu_mgr/gpu_mgr.c
++++ b/src/nvidia/src/kernel/gpu_mgr/gpu_mgr.c
+@@ -1259,6 +1259,15 @@ gpumgrGetGpuHalFactor
+         *pChipId1 = osDevReadReg032(/*pGpu=*/ NULL, &gpuDevMapping, NV_PMC_BOOT_42);
+         *pSocChipId0 = 0;
+ 
++        /* CC/TDX: PMC_BOOT_42 may return 0 - construct from PMC_BOOT_0 */
++        if (*pChipId1 == 0 && *pChipId0 != 0 && *pChipId0 != 0xFFFFFFFF)
++        {
++            NvU32 arch = decodePmcBoot0Architecture(*pChipId0);
++            NvU32 impl = DRF_VAL(_PMC, _BOOT_0, _IMPLEMENTATION, *pChipId0);
++            *pChipId1 = DRF_NUM(_PMC, _BOOT_42, _ARCHITECTURE, arch) |
++                         DRF_NUM(_PMC, _BOOT_42, _IMPLEMENTATION, impl);
++        }
++
+         gpumgrGetGpuHalFactorOfVirtual(&isVirtual, pAttachArg);
+ 
+         //
+--- a/src/nvidia/arch/nvalloc/unix/src/osapi.c
++++ b/src/nvidia/arch/nvalloc/unix/src/osapi.c
+@@ -3450,6 +3450,21 @@ NV_STATUS NV_API_CALL rm_is_supported_de
+ 
+     osUnmapKernelSpace(reg_mapping, os_page_size);
+ 
++    /*
++     * In CC/TDX mode, PMC_BOOT_42 may return 0. Construct a synthetic
++     * value from PMC_BOOT_0 which is still accessible.
++     */
++    if (pmc_boot_42 == 0 && pmc_boot_0 != 0 && pmc_boot_0 != 0xFFFFFFFF)
++    {
++        NvU32 arch = decodePmcBoot0Architecture(pmc_boot_0);
++        NvU32 impl = DRF_VAL(_PMC, _BOOT_0, _IMPLEMENTATION, pmc_boot_0);
++        pmc_boot_42 = DRF_NUM(_PMC, _BOOT_42, _ARCHITECTURE, arch) |
++                       DRF_NUM(_PMC, _BOOT_42, _IMPLEMENTATION, impl);
++        nv_printf(NV_DBG_WARNINGS,
++            "NVRM: PMC_BOOT_42 returned 0, constructed 0x%08x from PMC_BOOT_0 0x%08x\n",
++            pmc_boot_42, pmc_boot_0);
++    }
++
+     if ((pmc_boot_0 == 0xFFFFFFFF) && (pmc_boot_42 == 0xFFFFFFFF))
+     {
+         nv_printf(NV_DBG_ERRORS,
+--- a/src/nvidia/arch/nvalloc/unix/src/osinit.c
++++ b/src/nvidia/arch/nvalloc/unix/src/osinit.c
+@@ -1586,6 +1586,21 @@ NvBool RmInitPrivateState(
+ 
+         os_unmap_kernel_space(pNv->regs->map_u, os_page_size);
+         pNv->regs->map_u = NULL;
++
++        /*
++         * In CC/TDX mode, PMC_BOOT_42 may return 0. Construct a synthetic
++         * value from PMC_BOOT_0 which is still accessible.
++         */
++        if (pmc_boot_42 == 0 && pmc_boot_0 != 0 && pmc_boot_0 != 0xFFFFFFFF)
++        {
++            NvU32 arch = decodePmcBoot0Architecture(pmc_boot_0);
++            NvU32 impl = DRF_VAL(_PMC, _BOOT_0, _IMPLEMENTATION, pmc_boot_0);
++            pmc_boot_42 = DRF_NUM(_PMC, _BOOT_42, _ARCHITECTURE, arch) |
++                           DRF_NUM(_PMC, _BOOT_42, _IMPLEMENTATION, impl);
++            NV_PRINTF(LEVEL_WARNING,
++                "PMC_BOOT_42 returned 0, constructed 0x%08x from PMC_BOOT_0 0x%08x\n",
++                pmc_boot_42, pmc_boot_0);
++        }
+     }
+ 
+     if (os_alloc_mem((void **)&nvp, sizeof(*nvp)) != NV_OK)

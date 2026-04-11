@@ -16,8 +16,17 @@ permissions:
 
 jobs:
   build:
-    name: Build SEV-SNP base image
+    name: Build SEV-SNP base image (${{ matrix.variant }})
     runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - variant: generic
+            mkosi_args: ''
+            name_suffix: ''
+          - variant: gcp
+            mkosi_args: '--profile gcp'
+            name_suffix: '-gcp'
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -63,7 +72,7 @@ jobs:
       - name: Build image
         run: |
           cd images/sev-snp-base
-          sudo mkosi build
+          sudo mkosi ${{ matrix.mkosi_args }} build
 
       - name: Verify partitions
         run: |
@@ -72,17 +81,17 @@ jobs:
           echo "---"
           ls -lh "$RAW"
 
-      - name: Package for cloud
+      - name: Package image
         if: startsWith(github.ref, 'refs/tags/sev-snp-base-v')
         run: |
           cp images/sev-snp-base/privasys-sev-snp-base_*.raw disk.raw
-          tar -czf privasys-sev-snp-base-${{ github.ref_name }}.tar.gz disk.raw
+          tar -czf privasys-sev-snp-base${{ matrix.name_suffix }}-${{ github.ref_name }}.tar.gz disk.raw
           rm disk.raw
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/sev-snp-base-v')
         uses: softprops/action-gh-release@v2
         with:
-          files: privasys-sev-snp-base-*.tar.gz
+          files: privasys-sev-snp-base${{ matrix.name_suffix }}-*.tar.gz
           generate_release_notes: true
           make_latest: false

@@ -101,14 +101,14 @@ When using [Enclave OS Virtual](https://docs.privasys.org/solutions/enclave-os/p
 
 These images have the smallest attack surface: ~40 Ubuntu packages, no GUI, no package manager at runtime, no unnecessary services. The only writable paths are tmpfs mounts and the LUKS-encrypted data partition.
 
-### sev-snp-gpu
+### GPU images (tdx-gpu and sev-snp-gpu)
 
-The GPU image includes additional packages for NVIDIA Confidential Computing:
+The GPU images include additional packages for NVIDIA Confidential Computing:
 
 - **nvidia-driver-550-server**: The NVIDIA kernel module is signed by NVIDIA and Canonical for Ubuntu. It runs in kernel space and is part of the TCB.
 - **CUDA toolkit**: Runs in userspace. Large attack surface (~5 GB) but does not have kernel-level access.
 - **Confidential Computing mode**: Enabled via `nvidia.NVreg_ConfidentialComputing=1`. The GPU encrypts data in transit between CPU and GPU memory over the PCIe bus. The GPU has its own attestation capability (NVIDIA NRAS) for verifying the GPU firmware.
-- **Larger TCB**: The GPU image has a significantly larger trusted computing base than the non-GPU images. This is an inherent trade-off of confidential AI inference.
+- **Larger TCB**: The GPU images have a significantly larger trusted computing base than the non-GPU images. This is an inherent trade-off of confidential AI inference.
 - **Data partition**: A 500 GB data partition is included for model weights (supporting multiple models via vLLM). This partition is encrypted with LUKS, with the key derived from TEE attestation.
 
 ## Further reading

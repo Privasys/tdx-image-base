@@ -79,9 +79,9 @@ The KMS-based approach is more flexible because it checks attestation report fie
 
 These images include a data partition defined in their `mkosi.repart/` configuration. The partition is formatted as ext4 and intended for LUKS encryption.
 
-### sev-snp-gpu
+### GPU images (tdx-gpu and sev-snp-gpu)
 
-The `sev-snp-gpu` image includes a 500 GB data partition for AI model weights, supporting multiple models via vLLM. Model weights are often proprietary and their confidentiality is a primary motivation for confidential AI inference. This partition is LUKS-encrypted using the same TEE-attested key mechanisms described above.
+The GPU images include a 500 GB data partition for AI model weights, supporting multiple models via vLLM. Model weights are often proprietary and their confidentiality is a primary motivation for confidential AI inference. This partition is LUKS-encrypted using the same TEE-attested key mechanisms described above.
 
 ## Further reading
 

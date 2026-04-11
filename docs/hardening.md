@@ -111,9 +111,9 @@ When deployed through [Enclave OS Virtual](https://docs.privasys.org/solutions/e
 - **Minimal container capabilities.** Containers run with dropped Linux capabilities and read-only rootfs where possible.
 - **TLS termination via RA-TLS.** The attested reverse proxy (ra-tls-caddy) handles TLS termination at the edge, so containers serve plain HTTP internally while all external traffic is RA-TLS protected.
 
-## GPU workloads (sev-snp-gpu)
+## GPU workloads (tdx-gpu and sev-snp-gpu)
 
-The `sev-snp-gpu` image includes the NVIDIA H100 Confidential Computing stack:
+The GPU images include the NVIDIA H100 Confidential Computing stack:
 
 - **GPU attestation.** The GPU has its own attestation mechanism (via NVIDIA's Remote Attestation Service). CPU attestation proves the VM code is correct. GPU attestation proves the GPU firmware is genuine and CC mode is active.
 - **Encrypted GPU memory.** With Confidential Computing mode enabled, the GPU encrypts data in transit between CPU and GPU memory over the PCIe bus.
@@ -134,4 +134,3 @@ The `sev-snp-gpu` image includes the NVIDIA H100 Confidential Computing stack:
 | Firmware protection | CVM Guard kernel patch (BadAML) |
 | Minimal attack surface | ~40 packages, no desktop, no interpreters beyond bash |
 | Container attestation | Digests and config measured into RA-TLS X.509 extensions |
-- [ ] Serial console is disabled if not needed

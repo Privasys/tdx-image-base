@@ -69,7 +69,7 @@ A smaller image is easier to audit. The base images include approximately 40 pac
 - Core system (systemd, udev, dbus, bash)
 - Network (systemd-networkd, openssh-server)
 - Attestation and encryption (tpm2-tools, clevis, cryptsetup)
-- Cloud integration (google-compute-engine, google-guest-agent)
+- Cloud integration via optional profiles (e.g. `--profile gcp` adds google-compute-engine, google-guest-agent)
 
 There is no:
 - Package manager at runtime (no apt, no snap, no pip)

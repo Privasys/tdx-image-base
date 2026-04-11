@@ -21,8 +21,17 @@ env:
 
 jobs:
   build:
-    name: Build TDX GPU image
+    name: Build TDX GPU image (${{ matrix.variant }})
     runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - variant: generic
+            mkosi_args: ''
+            name_suffix: ''
+          - variant: gcp
+            mkosi_args: '--profile gcp'
+            name_suffix: '-gcp'
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -84,7 +93,7 @@ jobs:
       - name: Build image
         run: |
           cd images/tdx-gpu
-          sudo mkosi build
+          sudo mkosi ${{ matrix.mkosi_args }} build
 
       - name: Verify partitions
         run: |
@@ -93,14 +102,14 @@ jobs:
           echo "---"
           ls -lh "$RAW"
 
-      - name: Package for cloud
+      - name: Package image
         if: startsWith(github.ref, 'refs/tags/tdx-gpu-v')
         run: |
           RAW=$(basename images/tdx-gpu/privasys-tdx-gpu_*.raw)
-          tar --zstd -cf privasys-tdx-gpu-${{ github.ref_name }}.tar.zst \
+          tar --zstd -cf privasys-tdx-gpu${{ matrix.name_suffix }}-${{ github.ref_name }}.tar.zst \
             --transform "s|$RAW|disk.raw|" \
             -C images/tdx-gpu "$RAW"
-          ls -lh privasys-tdx-gpu-*.tar.zst
+          ls -lh privasys-tdx-gpu${{ matrix.name_suffix }}-*.tar.zst
           rm images/tdx-gpu/"$RAW"
 
       - name: Authenticate to GCP
@@ -118,7 +127,7 @@ jobs:
         continue-on-error: true
         id: gcs-upload
         run: |
-          gcloud storage cp privasys-tdx-gpu-*.tar.zst gs://${{ env.GCS_BUCKET }}/
+          gcloud storage cp privasys-tdx-gpu${{ matrix.name_suffix }}-*.tar.zst gs://${{ env.GCS_BUCKET }}/
           echo "Uploaded to gs://${{ env.GCS_BUCKET }}/"
 
       - name: Warn if GCS upload was skipped
@@ -127,15 +136,19 @@ jobs:
           echo "::warning::GCS upload failed or was skipped. The image was built but not uploaded to GCS. Fix the WIF IAM binding for Privasys/cvm-images."
 
       - name: Create GitHub Release
-        if: always() && startsWith(github.ref, 'refs/tags/tdx-gpu-v')
+        if: always() && startsWith(github.ref, 'refs/tags/tdx-gpu-v') && matrix.variant == 'generic'
         uses: softprops/action-gh-release@v2
         with:
           body: |
             ## TDX GPU Image ${{ github.ref_name }}
 
             Download from GCS:
-            ```
+            ```bash
+            # Cloud-agnostic image
             gcloud storage cp gs://${{ env.GCS_BUCKET }}/privasys-tdx-gpu-${{ github.ref_name }}.tar.zst .
+
+            # GCP image (includes google-compute-engine, google-guest-agent, oslogin)
+            gcloud storage cp gs://${{ env.GCS_BUCKET }}/privasys-tdx-gpu-gcp-${{ github.ref_name }}.tar.zst .
             ```
           generate_release_notes: true
           make_latest: false

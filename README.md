@@ -13,7 +13,25 @@ These images are the base OS layer used by [Enclave OS Virtual](https://docs.pri
 | **sev-snp-base** | `images/sev-snp-base/` | AMD SEV-SNP | Base image for SEV-SNP confidential VMs |
 | **sev-snp-gpu** | `images/sev-snp-gpu/` | AMD SEV-SNP + NVIDIA H100 | Confidential AI inference with GPU CC mode |
 
-All images share the same security architecture: erofs root, dm-verity, Secure Boot, kernel lockdown. Shared overlay files (network, SSH, tmpfiles) live in `common/mkosi.extra/`. GPU images add NVIDIA driver packages, CUDA toolkit, container runtime integration, and kernel command line parameters for Confidential Computing mode.
+All images share the same security architecture: erofs root, dm-verity, Secure Boot, kernel lockdown. Shared overlay files live in `common/mkosi.extra/`:
+
+| File | Purpose |
+|------|---------|
+| `etc/resolv.conf` | Symlink to systemd-resolved |
+| `etc/nsswitch.conf` | Name service switch (passwd, group, hosts) |
+| `etc/ssh/sshd_config.d/50-hardened.conf` | Disable password auth, restrict root login |
+| `etc/sysctl.d/60-apparmor-userns.conf` | Allow container runtime user namespaces |
+| `etc/systemd/network/10-dhcp.network` | DHCP networking on en* interfaces |
+| `etc/tmpfiles.d/readwrite.conf` | Runtime directories on tmpfs |
+| `usr/lib/systemd/system/tmp.mount` | Volatile /tmp (256 MB tmpfs) |
+| `usr/lib/systemd/system/var-log.mount` | Volatile /var/log (64 MB tmpfs) |
+| `usr/lib/systemd/system/var-tmp.mount` | Volatile /var/tmp (64 MB tmpfs) |
+
+Cloud-specific additions (GCP guest agent, OS Login, SSH metadata keys) are applied via **mkosi profiles**. See [Cloud profiles](#cloud-profiles).
+
+GPU images add NVIDIA driver packages, CUDA toolkit, container runtime integration, and kernel command line parameters for Confidential Computing mode.
+
+**Downstream consumers:** [Enclave OS Virtual](https://docs.privasys.org/solutions/enclave-os/presentation/) imports from this repository for both base and GPU images. The base image imports `common/mkosi.extra/`, `tdx-base/mkosi.conf.d/boot.conf`, and `tdx-base/mkosi.postinst.chroot`. The GPU image additionally imports from `tdx-gpu/` (NVIDIA repos, prepare scripts, persistenced overlay).
 
 The images are cloud-agnostic at their core, a standard GPT disk with a GRUB-booted kernel, erofs root, and dm-verity hash tree. They can run on any capable hypervisor (GCP, Azure, bare-metal QEMU/KVM). See [Deployment guides](#deployment-guides) for platform-specific instructions.
 
@@ -59,7 +77,7 @@ Every byte of code that executes on the machine is either measured by TEE hardwa
 | Networking | systemd-networkd with DHCP |
 | SSH | openssh-server (password auth disabled) |
 | Attestation support | tpm2-tools, clevis, cryptsetup |
-| Cloud integration | google-compute-engine, google-guest-agent (GCP; removable for other platforms) |
+| Cloud integration | Optional via `--profile gcp` (google-compute-engine, google-guest-agent, OS Login) |
 
 ## Pre-built images
 
@@ -91,11 +109,16 @@ sudo apt install -y \
 git clone https://github.com/Privasys/cvm-images.git
 cd cvm-images
 
-# Build a specific image:
+# Build a cloud-agnostic image (no cloud-specific packages):
 cd images/tdx-base && sudo mkosi build
-# or: cd images/tdx-gpu && sudo mkosi build
-# or: cd images/sev-snp-base && sudo mkosi build
-# or: cd images/sev-snp-gpu && sudo mkosi build
+
+# Build with GCP support (adds google-guest-agent, OS Login, metadata SSH keys):
+cd images/tdx-base && sudo mkosi --profile gcp build
+
+# Other images:
+# cd images/tdx-gpu && sudo mkosi [--profile gcp] build
+# cd images/sev-snp-base && sudo mkosi [--profile gcp] build
+# cd images/sev-snp-gpu && sudo mkosi [--profile gcp] build
 ```
 
 Output: `privasys-tdx-base_0.1.0.raw` (~1.5 GB)
@@ -143,6 +166,28 @@ tpm2_pcrread sha256:0,1,2,3,4,5,7,11
 
 Exit QEMU: `Ctrl-A X`
 
+## Cloud profiles
+
+The base images are **cloud-agnostic** - they contain no cloud-provider-specific packages or configuration. Cloud-specific additions are applied via [mkosi profiles](https://github.com/systemd/mkosi):
+
+| Profile | Adds | Use case |
+|---------|------|----------|
+| `gcp` | `google-compute-engine`, `google-guest-agent`, `google-compute-engine-oslogin`, GCE SSH key lookup, OS Login nsswitch | Google Cloud Platform |
+| *(none)* | Nothing extra | Bare metal, QEMU/KVM, OVHcloud, or any other platform |
+
+To build with a profile:
+
+```bash
+cd images/tdx-base && sudo mkosi --profile gcp build
+```
+
+Profile files live in `mkosi.profiles/<name>/mkosi.conf` within each image directory. The shared GCP overlay files (SSH metadata key script, OS Login nsswitch, runtime directories) live in `common/mkosi.extra.gcp/`.
+
+Adding a new cloud provider (e.g. AWS, Azure) requires:
+
+1. Create `common/mkosi.extra.<cloud>/` with provider-specific overlay files
+2. Add `mkosi.profiles/<cloud>/mkosi.conf` in each image directory with the relevant packages and `ExtraTrees=`
+
 ## Deployment guides
 
 | Platform | TEE | Guide |
@@ -164,11 +209,13 @@ images/
   tdx-base/                   # Intel TDX base image
     mkosi.conf                # Image-specific configuration
     mkosi.conf.d/boot.conf    # TDX kernel command line
+    mkosi.profiles/gcp/       # GCP profile (packages + overlay)
     mkosi.repart/             # Partition layout
   tdx-gpu/                    # Intel TDX + NVIDIA H100
     mkosi.conf                # Adds NVIDIA 590 open driver, CUDA 13, container toolkit
     mkosi.conf.d/boot.conf    # GPU CC mode (iommu=pt, NVreg_ConfidentialComputing)
     mkosi.extra/              # NVIDIA service enables
+    mkosi.profiles/gcp/       # GCP profile
     mkosi.pkgmanager/         # NVIDIA/CUDA apt repos + GPG keys + driver pinning
     mkosi.prepare             # Fix stray depmod directory from nvidia-kernel-source
     mkosi.postinst.chroot     # vmlinuz symlink, signed GRUB, vfat cleanup
@@ -176,22 +223,30 @@ images/
   sev-snp-base/               # AMD SEV-SNP base image
     mkosi.conf
     mkosi.conf.d/boot.conf    # SEV kernel command line (mem_encrypt=on)
+    mkosi.profiles/gcp/       # GCP profile
     mkosi.repart/
   sev-snp-gpu/                # AMD SEV-SNP + NVIDIA H100
     mkosi.conf                # Adds NVIDIA driver, CUDA, container toolkit
     mkosi.conf.d/boot.conf    # GPU CC mode (iommu=nopt, NVreg_ConfidentialComputing)
     mkosi.extra/              # NVIDIA service enables
+    mkosi.profiles/gcp/       # GCP profile
     mkosi.prepare             # Adds NVIDIA apt repos
     mkosi.repart/             # Includes 500G data partition for models
 common/
-  mkosi.extra/                # Shared overlay files
+  mkosi.extra/                # Shared cloud-agnostic overlay files
     etc/
       resolv.conf
       systemd/
-        network/10-gcp.network
+        network/10-dhcp.network
         system/ (service enables)
       ssh/sshd_config.d/50-hardened.conf
       tmpfiles.d/readwrite.conf
+  mkosi.extra.gcp/            # GCP-specific overlay (layered on top by profile)
+    etc/
+      nsswitch.conf           # Adds oslogin to passwd/group
+      ssh/sshd_config.d/60-gce.conf
+      tmpfiles.d/gcp.conf
+    usr/bin/gce-authorized-keys
 build-kernel.sh               # Patched CVM guard kernel build script
 patches/                      # Kernel patches (BadAML CVM guard)
 docs/

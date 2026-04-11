@@ -7,7 +7,7 @@ Import and launch the tdx-image-base image on GCP Confidential VMs with Intel TD
 - A GCP project with Confidential VM access
 - `gcloud` CLI authenticated
 - A GCS bucket for image storage
-- The built image (`privasys-tdx-base_0.1.0.raw`) — see [Building from source](../README.md#building-from-source)
+- The built image (`privasys-tdx-base_0.1.0.raw`) built with `--profile gcp` - see [Building from source](../README.md#building-from-source)
 
 ## Package and upload
 
@@ -65,5 +65,5 @@ tpm2_pcrread sha256:0,1,2,3,4,5,7,11
 
 - **Machine types:** TDX is available on C3 machines (`c3-standard-*`). Not all zones support TDX — check [GCP Confidential VM docs](https://cloud.google.com/confidential-computing/confidential-vm/docs/os-and-machine-type#machine_type) for availability.
 - **Attestation:** GCP wraps TDX attestation in its [Confidential Computing API](https://cloud.google.com/confidential-computing/confidential-vm/docs/attestation). You can also do raw TDX attestation via `/dev/tdx_guest`.
-- **Guest agent:** The image includes `google-compute-engine` and `google-guest-agent` for metadata-based SSH key injection and instance identity. These packages are inert on non-GCP platforms.
+- **Guest agent:** The GCP profile (`--profile gcp`) includes `google-compute-engine` and `google-guest-agent` for metadata-based SSH key injection and instance identity.
 - **Networking:** GCP uses gVNIC (`--network-interface=nic-type=GVNIC`). The kernel includes the `gve` driver. systemd-networkd handles DHCP automatically.

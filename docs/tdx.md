@@ -87,6 +87,7 @@ When deployed through [Enclave OS Virtual](https://docs.privasys.org/solutions/e
 | Platform | Guide | TDX host managed by |
 |----------|-------|---------------------|
 | Google Cloud Platform | [deploy-gcp.md](deploy-gcp.md) | Google |
+| Google Cloud Platform (GPU) | [deploy-gcp-gpu.md](deploy-gcp-gpu.md) | Google |
 | OVHcloud bare metal (Scale-i1) | [deploy-ovhcloud.md](deploy-ovhcloud.md) | Operator (via [canonical/tdx](https://github.com/canonical/tdx)) |
 
 ## TDX-specific design decisions
