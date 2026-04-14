@@ -2,16 +2,7 @@ name: Build Patched Kernel
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'build-kernel.sh'
-      - 'patches/**'
     tags: ['kernel-v*']
-  pull_request:
-    branches: [main]
-    paths:
-      - 'build-kernel.sh'
-      - 'patches/**'
   workflow_dispatch:
 
 permissions:

@@ -2,16 +2,7 @@ name: Build NVIDIA CC Modules
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'build-nvidia-modules.sh'
-      - 'patches/nvidia/**'
     tags: ['nvidia-cc-v*']
-  pull_request:
-    branches: [main]
-    paths:
-      - 'build-nvidia-modules.sh'
-      - 'patches/nvidia/**'
   workflow_dispatch:
 
 permissions:
