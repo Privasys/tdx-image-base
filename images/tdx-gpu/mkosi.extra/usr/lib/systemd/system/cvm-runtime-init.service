@@ -7,7 +7,10 @@ DefaultDependencies=no
 After=local-fs.target data.mount
 Requires=local-fs.target
 Before=containerd.service manager.service caddy.service multi-user.target
-ConditionPathExists=/sys/firmware/tdx
+# /dev/tdx_guest is the canonical TDX guest device on GCP/OVH/Linux >=6.2.
+# /sys/firmware/tdx is NOT exposed by the in-tree TDX guest driver; do
+# not use it as a condition (the unit will silently skip).
+ConditionPathExists=/dev/tdx_guest
 # Soft failure: don't block boot if NVIDIA setup fails.
 # Operators can inspect /run/cvm-runtime-init.log.
 

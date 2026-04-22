@@ -37,7 +37,7 @@ echo "=== cvm-runtime-init started at $(date) ==="
 # logind session); replace with pam_permit so SSH login works.
 echo ">>> PAM fix"
 for f in common-session common-session-noninteractive; do
-  if [ -f "/etc/pam.d/$f" ]; then
+  if [ -f "/etc/pam.d/$f" ] && ! mountpoint -q "/etc/pam.d/$f"; then
     cp "/etc/pam.d/$f" "/run/pam-$f"
     sed -i 's/.*pam_systemd.so.*/session optional pam_permit.so/' "/run/pam-$f"
     mount --bind "/run/pam-$f" "/etc/pam.d/$f"
@@ -153,6 +153,63 @@ if command -v nvidia-ctk >/dev/null 2>&1; then
 else
   echo "WARNING: nvidia-ctk not found, skipping CDI generation"
 fi
+
+# ── 8. nvidia-container-runtime mode=legacy ─────────────────────────────
+# nvidia-container-runtime v1.19.0 in default mode=auto silently rewrites
+# NVIDIA_VISIBLE_DEVICES=all to "void" when CDI lookup fails, hiding the
+# GPU from every container. Force mode=legacy. The config and the runc
+# delegation wrappers live on /data so an operator can roll them back
+# without rebuilding the image.
+#
+# The 3-step delegation:
+#   containerd  ->  /usr/sbin/runc  (bind-mounted to /data/runc-nvidia)
+#                ->  /usr/bin/nvidia-container-runtime
+#                ->  /data/runc-real (the actual runc binary, copied
+#                                     before the bind-mount)
+# See: .operations/know-how/tdx-nvidia-cc.md ("nvidia-container-runtime Fix")
+NVCONFIG=/data/nvidia-config.toml
+RUNC_NVIDIA=/data/runc-nvidia
+RUNC_REAL=/data/runc-real
+
+if [ -e /usr/sbin/runc ] && [ ! -f "$RUNC_REAL" ]; then
+  cp /usr/sbin/runc "$RUNC_REAL"
+fi
+
+if [ ! -f "$RUNC_NVIDIA" ]; then
+  cat > "$RUNC_NVIDIA" <<'WRAP'
+#!/bin/sh
+exec /usr/bin/nvidia-container-runtime "$@"
+WRAP
+  chmod +x "$RUNC_NVIDIA"
+fi
+
+if [ ! -f "$NVCONFIG" ]; then
+  cat > "$NVCONFIG" <<EOF
+disable-require = true
+supported-driver-capabilities = "compat32,compute,display,graphics,ngx,utility,video"
+
+[nvidia-container-cli]
+environment = []
+ldconfig = "@/sbin/ldconfig.real"
+load-kmods = true
+
+[nvidia-container-runtime]
+log-level = "info"
+mode = "legacy"
+runtimes = ["${RUNC_REAL}", "crun"]
+
+[nvidia-container-runtime.modes.legacy]
+cuda-compat-mode = "ldconfig"
+EOF
+fi
+
+echo ">>> Bind-mounting nvidia runtime overrides"
+mountpoint -q /usr/sbin/runc 2>/dev/null \
+  || mount --bind "$RUNC_NVIDIA" /usr/sbin/runc \
+  || echo "WARNING: failed to bind-mount runc wrapper"
+mountpoint -q /etc/nvidia-container-runtime/config.toml 2>/dev/null \
+  || mount --bind "$NVCONFIG" /etc/nvidia-container-runtime/config.toml \
+  || echo "WARNING: failed to bind-mount nvidia config"
 
 echo "=== cvm-runtime-init finished at $(date) ==="
 exit 0
