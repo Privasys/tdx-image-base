@@ -166,7 +166,6 @@ fi
 #                ->  /usr/bin/nvidia-container-runtime
 #                ->  /data/runc-real (the actual runc binary, copied
 #                                     before the bind-mount)
-# See: .operations/know-how/tdx-nvidia-cc.md ("nvidia-container-runtime Fix")
 NVCONFIG=/data/nvidia-config.toml
 RUNC_NVIDIA=/data/runc-nvidia
 RUNC_REAL=/data/runc-real
