@@ -3,7 +3,7 @@ name: Build TDX GPU Image
 on:
   push:
     branches: [main]
-    tags: ['tdx-gpu-v*']
+    tags: ['tdx-gpu-v*', 'tdx-gpu-nopatch-v*']
   pull_request:
     branches: [main]
     paths:
@@ -103,7 +103,7 @@ jobs:
           ls -lh "$RAW"
 
       - name: Package image
-        if: startsWith(github.ref, 'refs/tags/tdx-gpu-v')
+        if: startsWith(github.ref, 'refs/tags/tdx-gpu-')
         run: |
           RAW=$(basename images/tdx-gpu/privasys-tdx-gpu_*.raw)
           tar --zstd -cf privasys-tdx-gpu${{ matrix.name_suffix }}-${{ github.ref_name }}.tar.zst \
@@ -113,7 +113,7 @@ jobs:
           rm images/tdx-gpu/"$RAW"
 
       - name: Authenticate to GCP
-        if: startsWith(github.ref, 'refs/tags/tdx-gpu-v')
+        if: startsWith(github.ref, 'refs/tags/tdx-gpu-')
         uses: google-github-actions/auth@v2
         continue-on-error: true
         id: gcp-auth
@@ -123,7 +123,7 @@ jobs:
           project_id: ${{ vars.GCP_PROJECT }}
 
       - name: Upload to GCS
-        if: startsWith(github.ref, 'refs/tags/tdx-gpu-v') && steps.gcp-auth.outcome == 'success'
+        if: startsWith(github.ref, 'refs/tags/tdx-gpu-') && steps.gcp-auth.outcome == 'success'
         continue-on-error: true
         id: gcs-upload
         run: |
@@ -131,12 +131,12 @@ jobs:
           echo "Uploaded to gs://${{ env.GCS_BUCKET }}/"
 
       - name: Warn if GCS upload was skipped
-        if: startsWith(github.ref, 'refs/tags/tdx-gpu-v') && steps.gcs-upload.outcome != 'success'
+        if: startsWith(github.ref, 'refs/tags/tdx-gpu-') && steps.gcs-upload.outcome != 'success'
         run: |
           echo "::warning::GCS upload failed or was skipped. The image was built but not uploaded to GCS. Fix the WIF IAM binding for Privasys/cvm-images."
 
       - name: Create GitHub Release
-        if: always() && startsWith(github.ref, 'refs/tags/tdx-gpu-v') && matrix.variant == 'generic'
+        if: always() && startsWith(github.ref, 'refs/tags/tdx-gpu-') && matrix.variant == 'generic'
         uses: softprops/action-gh-release@v2
         with:
           body: |
